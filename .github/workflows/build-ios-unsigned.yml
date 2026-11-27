@@ -1,0 +1,66 @@
+name: Build VoidLink iOS IPA (unsigned)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [Integration]
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # 确认仓库源码与官方一致：iOS target=Moonlight, tvOS target="Moonlight TV"
+      - name: Verify targets
+        shell: bash
+        run: xcodebuild -project Moonlight.xcodeproj -list
+
+      - name: Build iOS (unsigned)
+        shell: bash
+        run: |
+          set -euo pipefail
+          DERIVED_DATA="${RUNNER_TEMP}/DerivedData"
+          LOG_PATH="${RUNNER_TEMP}/xcodebuild.log"
+
+          # iOS target/scheme 确切名为 Moonlight（product=Limelight）
+          xcodebuild \
+            -project Moonlight.xcodeproj \
+            -scheme Moonlight \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -derivedDataPath "${DERIVED_DATA}" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PRODUCT_BUNDLE_IDENTIFIER=com.voidlink.free.build \
+            build | tee "${LOG_PATH}"
+
+          APP_PATH="$(find "${DERIVED_DATA}/Build/Products" -maxdepth 2 -type d -name "*.app" | head -n 1)"
+          if [[ -z "${APP_PATH}" ]]; then
+            echo "Failed to locate built .app under ${DERIVED_DATA}/Build/Products"
+            exit 1
+          fi
+          echo "APP_PATH=${APP_PATH}"
+
+          mkdir -p "${RUNNER_TEMP}/ipa/Payload"
+          cp -R "${APP_PATH}" "${RUNNER_TEMP}/ipa/Payload/"
+
+          (cd "${RUNNER_TEMP}/ipa" && zip -qry "${GITHUB_WORKSPACE}/VoidLink-ios-unsigned.ipa" Payload)
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoidLink-ios-unsigned.ipa
+          path: VoidLink-ios-unsigned.ipa
+
+      - name: Upload build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild.log
+          path: ${{ runner.temp }}/xcodebuild.log
