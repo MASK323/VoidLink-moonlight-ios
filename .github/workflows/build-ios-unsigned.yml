@@ -20,6 +20,25 @@ jobs:
         shell: bash
         run: xcodebuild -project Moonlight.xcodeproj -list
 
+      # 修复 fork 源码 bug: UIComputerView.m 的 VLTVOSUI.h 被 #if TARGET_OS_TV 包住，
+      # 但第 268 行无条件使用了 VLTVOS_STR -> iOS 编译报 undeclared function。
+      - name: Patch missing import for iOS
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          p = "Limelight/UIComputerView.m"
+          s = open(p, encoding="utf-8").read()
+          old = '#if TARGET_OS_TV\n#import "VLTVOSUI.h"\n#endif'
+          new = '#import "VLTVOSUI.h"'
+          if old in s:
+              s = s.replace(old, new, 1)
+              open(p, "w", encoding="utf-8").write(s)
+              print("patched: made VLTVOSUI.h import unconditional")
+          else:
+              print("patch pattern not found; checking if already fixed")
+          PY
+          grep -n 'VLTVOSUI.h' Limelight/UIComputerView.m | head
+
       - name: Build iOS (unsigned)
         shell: bash
         run: |
